@@ -60,10 +60,10 @@ type APIGodAttributes struct {
 
 // APIAbility represents an ability from the API
 type APIAbility struct {
-	Name        string   `json:"Name"`
-	Slot        string   `json:"Slot"`
-	Description string   `json:"Description"`
-	Icon        APIIcon  `json:"Icon"`
+	Name        string  `json:"Name"`
+	Slot        string  `json:"Slot"`
+	Description string  `json:"Description"`
+	Icon        APIIcon `json:"Icon"`
 }
 
 // APIIcon represents the icon data from the API
@@ -366,7 +366,7 @@ func FormatGodInfoForDiscord(god *God) *GodInfoForDiscord {
 	}
 
 	// Create the main description with basic info
-	description := fmt.Sprintf("**%s Pantheon**\n🔸 **Damage Type:** %s\n🔸 **Attack Type:** %s", 
+	description := fmt.Sprintf("**%s Pantheon**\n🔸 **Damage Type:** %s\n🔸 **Attack Type:** %s",
 		god.Pantheon, god.DamageType, god.AttackType)
 
 	// Add roles
@@ -386,7 +386,7 @@ func FormatGodInfoForDiscord(god *God) *GodInfoForDiscord {
 	// Find and add passive first
 	for _, ability := range god.Abilities {
 		if strings.ToLower(ability.Slot) == "passive" {
-			desc := stripHTMLTags(ability.Description)
+			desc := StripHTMLTags(ability.Description)
 			result.Fields = append(result.Fields, GodInfoField{
 				Name:   fmt.Sprintf("%s (Passive)", ability.Name),
 				Value:  desc,
@@ -400,7 +400,7 @@ func FormatGodInfoForDiscord(god *God) *GodInfoForDiscord {
 	abilityCount := 0
 	for _, ability := range god.Abilities {
 		if strings.ToLower(ability.Slot) != "passive" && abilityCount < 4 {
-			desc := stripHTMLTags(ability.Description)
+			desc := StripHTMLTags(ability.Description)
 			result.Fields = append(result.Fields, GodInfoField{
 				Name:   fmt.Sprintf("%s (%s)", ability.Name, ability.Slot),
 				Value:  desc,
@@ -416,16 +416,16 @@ func FormatGodInfoForDiscord(god *God) *GodInfoForDiscord {
 // FormatGodInfo returns a formatted string with god mechanics information (legacy function)
 func FormatGodInfo(god *God) string {
 	info := FormatGodInfoForDiscord(god)
-	
+
 	var result strings.Builder
 	result.WriteString(fmt.Sprintf("**%s**\n", info.Title))
 	result.WriteString(fmt.Sprintf("%s\n\n", info.Description))
-	
+
 	result.WriteString("**Abilities:**\n")
 	for _, field := range info.Fields {
 		result.WriteString(fmt.Sprintf("**%s**\n└ %s\n\n", field.Name, field.Value))
 	}
-	
+
 	return result.String()
 }
 
@@ -436,7 +436,7 @@ func GetGodAbilityIcons(god *God) []string {
 	}
 
 	var icons []string
-	
+
 	// Find passive first
 	for _, ability := range god.Abilities {
 		if strings.ToLower(ability.Slot) == "passive" && ability.IconURL != "" {
@@ -457,13 +457,13 @@ func GetGodAbilityIcons(god *God) []string {
 	return icons
 }
 
-// stripHTMLTags removes HTML tags from ability descriptions
-func stripHTMLTags(text string) string {
+// StripHTMLTags removes HTML tags from ability descriptions
+func StripHTMLTags(text string) string {
 	// Simple HTML tag removal - replace common tags
 	text = strings.ReplaceAll(text, "<p>", "")
-	text = strings.ReplaceAll(text, "</p>", "")
+	text = strings.ReplaceAll(text, "</p>", "\n")
 	text = strings.ReplaceAll(text, "<br>", " ")
-	text = strings.ReplaceAll(text, "<br/>", " ")
+	text = strings.ReplaceAll(text, "<br/>", "\n")
 	text = strings.ReplaceAll(text, "&nbsp;", " ")
 
 	// Remove any remaining HTML tags using a simple approach
@@ -598,4 +598,50 @@ func GenerateRandomTeams() (*GameSetup, error) {
 		Team1: team1,
 		Team2: team2,
 	}, nil
+}
+
+// GetAllGods returns all loaded gods
+func GetAllGods() []God {
+	return godsList
+}
+
+// CreateSmite2ComURLSlug converts a god name to a URL-friendly slug for smite2.com
+func CreateSmite2ComURLSlug(godName string) string {
+	// Convert to lowercase and replace spaces with hyphens
+	slug := strings.ToLower(godName)
+	slug = strings.ReplaceAll(slug, " ", "-")
+
+	// Remove or replace special characters
+	slug = strings.ReplaceAll(slug, "'", "") // Remove apostrophes
+	slug = strings.ReplaceAll(slug, ".", "") // Remove periods
+	slug = strings.ReplaceAll(slug, ",", "") // Remove commas
+
+	return slug
+}
+
+func CreateSmite2LiveURLSlug(godName string) string {
+	// Convert to lowercase and replace spaces with hyphens
+	slug := strings.ReplaceAll(godName, " ", "")
+
+	return slug
+}
+
+// CreateWikiURLSlug converts a god name to a URL-friendly slug for wiki.smite2.com
+func CreateWikiURLSlug(godName string) string {
+	// For MediaWiki, just replace spaces with underscores
+	return strings.ReplaceAll(godName, " ", "_")
+}
+
+// GetGodSmite2ComURL returns the full Smite2.com URL for a god
+func GetGodSmite2ComURL(godName string) string {
+	return fmt.Sprintf("https://www.smite2.com/gods/%s/", CreateSmite2ComURLSlug(godName))
+}
+
+// GetGodWikiURL returns the full wiki URL for a god
+func GetGodWikiURL(godName string) string {
+	return fmt.Sprintf("https://wiki.smite2.com/w/%s", CreateWikiURLSlug(godName))
+}
+
+func GetGodSmite2LiveURL(godName string) string {
+	return fmt.Sprintf("https://smite2.live/god/%s", CreateSmite2LiveURLSlug(godName))
 }

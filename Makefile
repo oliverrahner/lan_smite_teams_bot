@@ -68,6 +68,17 @@ dev-setup: install-tools deps ## Set up development environment
 
 check: fmt lint test ## Run all checks (format, lint, test)
 
+fetch-gods: ## Fetch latest gods data from API
+	@echo "Fetching gods data..."
+	./scripts/fetch_gods.sh
+
+validate-urls: ## Validate generated god URLs
+	@echo "Building URL validator..."
+	@mkdir -p $(BUILD_DIR)
+	go build -o $(BUILD_DIR)/validate_urls ./cmd/validate_urls/
+	@echo "Validating URLs..."
+	./$(BUILD_DIR)/validate_urls data/gods.json
+
 .PHONY: build-all
 build-all: ## Build for multiple platforms
 	@echo "Building for multiple platforms..."

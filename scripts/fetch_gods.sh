@@ -57,6 +57,22 @@ curl -f --retry 3 --retry-delay 2 "$API_URL" -o "$OUTPUT_FILE"
 if [ -s "$OUTPUT_FILE" ]; then
     echo "Successfully downloaded gods data to $OUTPUT_FILE"
     echo "File size: $(du -h "$OUTPUT_FILE" | cut -f1)"
+    
+    # Validate URLs for the downloaded gods
+    echo ""
+    echo "Validating god URLs..."
+    if command -v go >/dev/null 2>&1; then
+        # Build and run the URL validator
+        echo "Building URL validator..."
+        if go build -o bin/validate_urls ./cmd/validate_urls/; then
+            echo "Running URL validation..."
+            ./bin/validate_urls "$OUTPUT_FILE"
+        else
+            echo "Warning: Failed to build URL validator"
+        fi
+    else
+        echo "Warning: Go not found, skipping URL validation"
+    fi
 else
     echo "Error: Downloaded file is empty or doesn't exist"
     exit 1

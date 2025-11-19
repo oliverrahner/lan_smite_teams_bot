@@ -300,6 +300,19 @@ var slashCommands = []*discordgo.ApplicationCommand{
 		Name:        "help",
 		Description: "Show help information about the bot",
 	},
+	{
+		Name:        "godinfo",
+		Description: "Get detailed information about a specific god",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:         discordgo.ApplicationCommandOptionString,
+				Name:         "god",
+				Description:  "Name of the god to look up",
+				Required:     true,
+				Autocomplete: true,
+			},
+		},
+	},
 }
 
 // onReady is called when the bot is ready
@@ -383,6 +396,12 @@ func (b *Bot) cleanupExistingCommands(s *discordgo.Session) {
 
 // onInteractionCreate handles slash command interactions
 func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Handle autocomplete interactions
+	if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
+		b.handleAutocomplete(s, i)
+		return
+	}
+
 	// Only handle slash commands
 	if i.Type != discordgo.InteractionApplicationCommand {
 		return
@@ -400,6 +419,8 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 		b.handleRandomizeSlashCommand(s, i, guildConfig)
 	case "help":
 		b.handleHelpSlashCommand(s, i, guildConfig)
+	case "godinfo":
+		b.handleGodInfoSlashCommand(s, i, guildConfig)
 	}
 }
 
@@ -470,7 +491,7 @@ func (b *Bot) handleHelpSlashCommand(s *discordgo.Session, i *discordgo.Interact
 		Fields: []*discordgo.MessageEmbedField{
 			{
 				Name:   "Commands",
-				Value:  "`/randomize` - Generate random teams with gods for each role\n`/help` - Show this help message",
+				Value:  "`/randomize` - Generate random teams with gods for each role\n`/godinfo` - Get detailed information about a specific god\n`/help` - Show this help message",
 				Inline: false,
 			},
 			{
@@ -488,6 +509,108 @@ func (b *Bot) handleHelpSlashCommand(s *discordgo.Session, i *discordgo.Interact
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  discordgo.MessageFlagsEphemeral,
+		},
+	})
+}
+
+// handleAutocomplete handles autocomplete interactions for slash commands
+func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	if data.Name == "godinfo" {
+		b.handleGodAutocomplete(s, i)
+	}
+}
+
+// handleGodAutocomplete handles autocomplete for god names
+func (b *Bot) handleGodAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ApplicationCommandData()
+
+	var currentValue string
+	for _, option := range data.Options {
+		if option.Name == "god" && option.Focused {
+			if option.StringValue() != "" {
+				currentValue = strings.ToLower(option.StringValue())
+			}
+			break
+		}
+	}
+
+	// Get all gods and filter by current value
+	gods := smite.GetAllGods()
+	var choices []*discordgo.ApplicationCommandOptionChoice
+
+	for _, god := range gods {
+		if currentValue == "" || strings.Contains(strings.ToLower(god.Name), currentValue) {
+			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+				Name:  god.Name,
+				Value: god.Name,
+			})
+
+			// Discord limits autocomplete to 25 choices
+			if len(choices) >= 25 {
+				break
+			}
+		}
+	}
+
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+		Data: &discordgo.InteractionResponseData{
+			Choices: choices,
+		},
+	})
+
+	if err != nil {
+		log.Printf("Failed to respond to autocomplete: %v", err)
+	}
+}
+
+// handleGodInfoSlashCommand shows detailed god information via slash command
+func (b *Bot) handleGodInfoSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate, guildConfig config.GuildConfig) {
+	data := i.ApplicationCommandData()
+
+	// Get the god name from the option
+	var godName string
+	for _, option := range data.Options {
+		if option.Name == "god" {
+			godName = option.StringValue()
+			break
+		}
+	}
+
+	if godName == "" {
+		b.respondToInteraction(s, i, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Please specify a god name.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	// Find the god
+	god := smite.GetGodByName(godName)
+	if god == nil {
+		b.respondToInteraction(s, i, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("❌ God '%s' not found.", godName),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	// Create god info embed with a different title
+	embeds := b.createStandaloneGodInfoEmbed(god)
+
+	b.respondToInteraction(s, i, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: embeds,
 			Flags:  discordgo.MessageFlagsEphemeral,
 		},
 	})
@@ -694,47 +817,34 @@ func (b *Bot) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAd
 	}
 	gameState.mutex.RUnlock()
 
-	// Send ephemeral god information message via DM
+	// Send ephemeral god information message
 	if selectedGod != nil {
-		// Create multiple embeds - one for god info, then one for each ability
+		// Create single comprehensive embed (returns slice with one element)
 		embeds := b.createGodInfoEmbeds(selectedGod, role, team)
-		
+		embed := embeds[0] // Get the single embed
+
 		// Try to send as a true ephemeral followup message using the original interaction
 		gameState.mutex.RLock()
 		interaction := gameState.Interaction
 		gameState.mutex.RUnlock()
-		
+
 		if interaction != nil {
-			// Send main god info embed first
+			// Send single embed
 			_, err = s.FollowupMessageCreate(interaction, true, &discordgo.WebhookParams{
-				Embeds: []*discordgo.MessageEmbed{embeds[0]},
+				Embeds: []*discordgo.MessageEmbed{embed},
 				Flags:  discordgo.MessageFlagsEphemeral,
 			})
 			if err != nil {
-				log.Printf("Failed to send main ephemeral followup message to user %s: %v", user.Username, err)
+				log.Printf("Failed to send ephemeral followup message to user %s: %v", user.Username, err)
 				// Fallback to temporary channel message if followup fails
-				b.sendEmbedChannelMessage(s, r.ChannelID, embeds[0])
-				return
+				b.sendEmbedChannelMessage(s, r.ChannelID, embed)
+			} else {
+				log.Printf("Sent ephemeral god info to user %s (%s)", user.Username, r.UserID)
 			}
-			
-			// Send ability embeds (skip the first one which is the main info)
-			for i := 1; i < len(embeds); i++ {
-				_, err = s.FollowupMessageCreate(interaction, true, &discordgo.WebhookParams{
-					Embeds: []*discordgo.MessageEmbed{embeds[i]},
-					Flags:  discordgo.MessageFlagsEphemeral,
-				})
-				if err != nil {
-					log.Printf("Failed to send ability embed %d to user %s: %v", i, user.Username, err)
-				}
-			}
-			
-			log.Printf("Sent ephemeral god info with %d embeds to user %s (%s)", len(embeds), user.Username, r.UserID)
 		} else {
 			log.Printf("No interaction available for ephemeral message, using fallback for user %s", user.Username)
 			// Fallback to temporary channel message if no interaction available
-			for _, embed := range embeds {
-				b.sendEmbedChannelMessage(s, r.ChannelID, embed)
-			}
+			b.sendEmbedChannelMessage(s, r.ChannelID, embed)
 		}
 	}
 
@@ -882,9 +992,9 @@ func (b *Bot) buildTeamValue(team smite.Team, emojis map[smite.Role]string, part
 
 // sendTemporaryChannelMessage sends a message that stays in channel (fallback for when ephemeral isn't available)
 func (b *Bot) sendTemporaryChannelMessage(s *discordgo.Session, channelID, username string, role smite.Role, team int, godInfo string) {
-	messageContent := fmt.Sprintf("✅ **%s**, you claimed **%s** on Team %d!\n\n%s", 
+	messageContent := fmt.Sprintf("✅ **%s**, you claimed **%s** on Team %d!\n\n%s",
 		username, role, team, godInfo)
-	
+
 	_, err := s.ChannelMessageSend(channelID, messageContent)
 	if err != nil {
 		log.Printf("Failed to send god info message: %v", err)
@@ -903,47 +1013,59 @@ func (b *Bot) sendEmbedChannelMessage(s *discordgo.Session, channelID string, em
 	}
 }
 
-// createGodInfoEmbeds creates multiple embeds for god information with ability icons
+// createGodInfoEmbeds creates a single comprehensive embed for god information
 func (b *Bot) createGodInfoEmbeds(god *smite.God, role smite.Role, team int) []*discordgo.MessageEmbed {
-	var embeds []*discordgo.MessageEmbed
-	
+	title := fmt.Sprintf("✅ You claimed %s (%s) on Team %d!", god.Name, role, team)
+	return b.createGodEmbed(god, title)
+}
+
+// createStandaloneGodInfoEmbed creates god information embed for the godinfo slash command
+func (b *Bot) createStandaloneGodInfoEmbed(god *smite.God) []*discordgo.MessageEmbed {
+	title := fmt.Sprintf("📖 God Information: %s", god.Name)
+	return b.createGodEmbed(god, title)
+}
+
+// createGodEmbed creates a god information embed with the specified title
+func (b *Bot) createGodEmbed(god *smite.God, title string) []*discordgo.MessageEmbed {
 	// Convert roles to strings for joining
 	roleStrings := make([]string, len(god.Roles))
 	for i, r := range god.Roles {
 		roleStrings[i] = string(r)
 	}
-	
-	// Create main god info embed
+
+	// Create main god info embed with detailed ability information
+	var abilityTexts []string
+	for _, ability := range god.Abilities {
+		// Strip HTML tags and format ability
+		cleanDesc := smite.StripHTMLTags(ability.Description)
+		abilityText := fmt.Sprintf("**%s (%s)**\n%s", ability.Name, ability.Slot, cleanDesc)
+		abilityTexts = append(abilityTexts, abilityText)
+	}
+
+	// Generate URLs for god information
+	smiteURL := smite.GetGodSmite2ComURL(god.Name)
+	wikiURL := smite.GetGodWikiURL(god.Name)
+	smiteLiveURL := smite.GetGodSmite2LiveURL(god.Name)
+
 	mainEmbed := &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("✅ You claimed %s on Team %d!", role, team),
-		Description: fmt.Sprintf("🔸 **%s** %s\n🔸 **Damage Type:** %s\n🔸 **Attack Type:** %s\n🔸 **Roles:** %s",
+		Title: title,
+		URL:   smiteLiveURL,
+		Description: fmt.Sprintf("🔸 **%s** (%s)\n🔸 **Damage Type:** %s\n🔸 **Attack Type:** %s\n🔸 **Roles:** %s\n\n**Abilities:**\n%s\n\n**Links:**\n🔗 [smite2.com](%s)\n📖 [Smite 2 Official Wiki](%s)\n📖 [Smite 2 Live (Builds and METAs)](%s)",
 			god.Name, god.Pantheon,
 			god.DamageType,
 			god.AttackType,
-			strings.Join(roleStrings, ", ")),
+			strings.Join(roleStrings, ", "),
+			strings.Join(abilityTexts, "\n\n"),
+			smiteURL,
+			wikiURL,
+			smiteLiveURL,
+		),
 		Color: 0x0066cc,
 		Thumbnail: &discordgo.MessageEmbedThumbnail{
 			URL: god.PortraitURL,
 		},
-		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("%d abilities", len(god.Abilities)),
-		},
 	}
-	
-	embeds = append(embeds, mainEmbed)
-	
-	// Create separate embeds for each ability with its icon
-	for _, ability := range god.Abilities {
-		abilityEmbed := &discordgo.MessageEmbed{
-			Title:       fmt.Sprintf("🔮 %s (%s)", ability.Name, ability.Slot),
-			Description: ability.Description,
-			Color:       0x9966cc,
-			Thumbnail: &discordgo.MessageEmbedThumbnail{
-				URL: ability.IconURL,
-			},
-		}
-		embeds = append(embeds, abilityEmbed)
-	}
-	
-	return embeds
+
+	// Return just the single main embed
+	return []*discordgo.MessageEmbed{mainEmbed}
 }
