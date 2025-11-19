@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  smite-bot:
+    build: .
+    container_name: smite-discord-bot
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - CONFIG_PATH=/app/config.yaml
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+    # Uncomment the following lines if you want to run in read-only mode
+    # read_only: true
+    # tmpfs:
+    #   - /tmp
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+# Optional: Add a logging service like Loki or ELK stack
+# volumes:
+#   logs:
+#     driver: local
