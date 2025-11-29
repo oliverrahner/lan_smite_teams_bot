@@ -118,6 +118,22 @@ echo 'token: "your-bot-token-here"' > config.yaml
 
 ## Development
 
+### Updating God Data
+
+The bot uses god data scraped from the Smite2 Wiki. To update this data:
+
+```bash
+# Fetch latest god data from wiki
+./scripts/fetch_gods.sh
+```
+
+The god data is stored in `data/gods.json` and is automatically loaded by the bot when it starts. The scraper:
+- Uses the MediaWiki API to fetch god information
+- Parses role, ability, and pantheon data from wiki pages
+- Maintains compatibility with the existing god data format
+
+**Note**: The wiki scraper requires internet access and can take a few minutes to complete as it fetches data for all gods with rate limiting.
+
 ### Project Structure
 
 ```
@@ -139,11 +155,25 @@ echo 'token: "your-bot-token-here"' > config.yaml
 
 ### Adding New Gods
 
-To add new gods to the pool, edit `internal/smite/gods.go` and add entries to the `godsList` variable:
+Gods are automatically fetched from the Smite2 Wiki. To update the god database:
 
-```go
-{Name: "New God Name", Roles: []Role{RoleMid, RoleJungle}},
+```bash
+./scripts/fetch_gods.sh
 ```
+
+This will:
+1. Scrape all god data from https://wiki.smite2.com/w/Category:SMITE_2_gods
+2. Save the data to `data/gods.json`
+3. Validate the URLs for all gods
+
+The scraper fetches:
+- God names
+- Roles (Mid, Support, Jungle, Carry, Solo)
+- Abilities with descriptions
+- Pantheon information
+- Portrait images
+
+For more details, see [cmd/fetch_gods_wiki/README.md](cmd/fetch_gods_wiki/README.md).
 
 ### Testing
 
