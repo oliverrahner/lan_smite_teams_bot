@@ -136,9 +136,10 @@ This ensures compatibility with the existing `gods.go` interface.
 ## Limitations
 
 - **Incomplete data**: Some god pages may not have complete information, especially for newer gods
-- **HTML parsing**: The scraper uses regex-based HTML parsing which may be fragile if wiki formatting changes
-- **Image URLs**: Some image URLs may be placeholder URLs if not found in the HTML
-- **Abilities**: If fewer than 5 abilities are found, placeholders are created
+- **HTML parsing**: The scraper uses regex-based HTML parsing for simplicity. This works for most wiki pages but may be fragile if wiki formatting changes significantly. For more robust parsing, consider migrating to `golang.org/x/net/html`.
+- **Image URLs**: Some image URLs may be placeholder URLs if not found in the HTML. The scraper assumes double-quoted src attributes in img tags.
+- **Abilities**: The ability extraction pattern may not catch all cases, especially if there are nested HTML elements or non-standard formatting
+- **Character encoding**: HTML entities are handled for common cases but may not cover all Unicode scenarios
 
 ## Troubleshooting
 
@@ -162,8 +163,10 @@ This ensures compatibility with the existing `gods.go` interface.
 
 Potential enhancements:
 
-1. Use proper HTML parser (e.g., `golang.org/x/net/html`) instead of regex
-2. Cache results to avoid re-fetching unchanged pages
-3. Add incremental updates to only fetch new/modified gods
-4. Improve ability extraction with more robust parsing logic
-5. Add tests for the scraper functionality
+1. **Use proper HTML parser**: Replace regex-based parsing with `golang.org/x/net/html` for more robust and reliable extraction
+2. **Caching**: Cache results to avoid re-fetching unchanged pages
+3. **Incremental updates**: Only fetch new/modified gods instead of re-scraping everything
+4. **Improved ability extraction**: Use more sophisticated parsing logic to handle various wiki page formats
+5. **Add tests**: Create integration tests for the scraper functionality (requires wiki access)
+6. **Better error recovery**: Handle transient network errors with retries and exponential backoff
+7. **Structured data extraction**: Look for JSON-LD or microdata in wiki pages for more reliable data extraction

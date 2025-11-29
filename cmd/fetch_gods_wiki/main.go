@@ -246,7 +246,10 @@ func extractRoles(html string) []string {
 			// Split by common delimiters
 			for _, role := range strings.Split(roleText, ",") {
 				role = strings.TrimSpace(role)
-				role = strings.Title(strings.ToLower(role))
+				// Convert to title case manually (strings.Title is deprecated)
+				if len(role) > 0 {
+					role = strings.ToUpper(role[:1]) + strings.ToLower(role[1:])
+				}
 				
 				// Map to our role names
 				switch {
@@ -278,10 +281,13 @@ func extractRoles(html string) []string {
 }
 
 // extractAbilities extracts ability information from HTML
+// Note: Uses regex for simplicity. For production use with complex HTML,
+// consider using golang.org/x/net/html for more robust parsing.
 func extractAbilities(html string, godName string) []smite.APIAbility {
 	var abilities []smite.APIAbility
 	
 	// Look for ability sections
+	// This pattern may not catch all cases but works for most wiki pages
 	abilityPattern := regexp.MustCompile(`(?is)<h[23][^>]*>(.*?)</h[23]>.*?<p>(.*?)</p>`)
 	matches := abilityPattern.FindAllStringSubmatch(html, -1)
 	
@@ -371,6 +377,7 @@ func extractPantheon(html string, categories []struct {
 }
 
 // extractPortraitURL tries to extract portrait image URL
+// Note: Assumes double-quoted src attributes. May not work with all HTML variants.
 func extractPortraitURL(html string, godName string) string {
 	// Look for infobox images or main god image
 	imgPattern := regexp.MustCompile(`(?i)<img[^>]*src="([^"]*(?:` + regexp.QuoteMeta(godName) + `|portrait|card)[^"]*)"`)
@@ -391,6 +398,9 @@ func extractPortraitURL(html string, godName string) string {
 
 // Helper functions
 
+// stripHTML removes HTML tags from a string
+// Note: This is a simple implementation using regex. For complex HTML with
+// script tags, CDATA, or comments, consider using golang.org/x/net/html
 func stripHTML(s string) string {
 	// Remove HTML tags
 	re := regexp.MustCompile(`<[^>]*>`)
